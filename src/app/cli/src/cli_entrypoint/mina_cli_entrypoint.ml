@@ -369,6 +369,12 @@ let setup_daemon logger =
       ~doc:
         "true|false whether to track the set of all peers ever seen for the \
          all_peers metric (default: false)"
+  and uptime_snarks_url =
+    flag "--uptime-snarks-url" ~aliases:["uptime-snarks-url"] (optional string)
+      ~doc:
+        "URL URL of server that accepts SNARKs to node uptime for Mina \
+         delegation program\n\
+        \         all_peers metric (default: false)"
   in
   fun () ->
     let open Deferred.Let_syntax in
