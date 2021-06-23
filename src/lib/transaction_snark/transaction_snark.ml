@@ -3977,7 +3977,7 @@ let%test_module "transaction_snark" =
           |> Or_error.ok_exn
           |> fun ((), ()) -> () )
 
-    (* Disabling until new-style snapp transactions are fully implemented. 
+    (* Disabling until new-style snapp transactions are fully implemented.
 
     let%test_unit "signed_signed" =
       Test_util.with_randomness 123456789 (fun () ->
@@ -4028,6 +4028,134 @@ let%test_module "transaction_snark" =
                 ~next_available_token_after ~snapp_account1 ~snapp_account2 t1
                 (unstage @@ Sparse_ledger.handler sparse_ledger) ) )
        *)
+
+    let%test_module "multisig_account" =
+      ( module struct
+        module M_of_n_predicate = struct
+          type _witness = (Schnorr.Signature.t * Public_key.t) list
+
+          (* check that two public keys are equal *)
+          let eq_pk ((x0, y0) : Public_key.var) ((x1, y1) : Public_key.var) :
+              (Boolean.var, _) Checked.t =
+            [Field.Checked.equal x0 x1; Field.Checked.equal y0 y1]
+            |> Checked.List.all >>= Boolean.all
+
+          (* check that two public keys are not equal *)
+          let neq_pk (pk0 : Public_key.var) (pk1 : Public_key.var) :
+              (Boolean.var, _) Checked.t =
+            eq_pk pk0 pk1 >>| Boolean.not
+
+          (* check that the witness has distinct public keys for each signature *)
+          let rec distinct_public_keys = function
+            | (_, pk) :: xs ->
+                Checked.List.map ~f:(fun (_, pk') -> neq_pk pk pk') xs
+                >>= Boolean.Assert.all
+                >>= fun () -> distinct_public_keys xs
+            | [] ->
+                Checked.return ()
+
+          (* check a signature on msg against a public key *)
+          let check_sig pk msg sigma : (Boolean.var, _) Checked.t =
+            let%bind (module S) = Tick.Inner_curve.Checked.Shifted.create () in
+            Schnorr.Checked.verifies
+              (module S)
+              sigma pk
+              (Random_oracle.Input.field msg)
+
+          (* verify witness signatures against public keys *)
+          let verify_sigs pubkeys commitment witness =
+            let%bind pubkeys =
+              exists
+                (Typ.list ~length:(List.length pubkeys) Public_key.typ)
+                ~compute:(As_prover.return pubkeys)
+            in
+            let verify_sig (sigma, pk) : (Boolean.var, _) Checked.t =
+              Checked.List.exists pubkeys ~f:(fun pk' ->
+                  [eq_pk pk pk'; check_sig pk' commitment sigma]
+                  |> Checked.List.all >>= Boolean.all )
+            in
+            Checked.List.map witness ~f:verify_sig >>= Boolean.Assert.any
+
+          let _check_witness m pubkeys commitment witness =
+            if List.length witness <> m then
+              failwith @@ "witness length must be exactly " ^ Int.to_string m
+            else
+              distinct_public_keys witness
+              >>= fun () -> verify_sigs pubkeys commitment witness
+        end
+
+        let%test_unit "FIXME: wip" =
+          let open Transaction_logic.For_tests in
+          Quickcheck.test ~trials:15 Test_spec.gen
+            ~f:(fun {init_ledger; specs= _} ->
+              Ledger.with_ledger ~depth:ledger_depth ~f:(fun ledger ->
+                  Init_ledger.init
+                    (module Ledger.Ledger_inner)
+                    init_ledger ledger ;
+                  let witness : Parties_segment.Witness.t =
+                    let global_ledger : _ =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    let local_state_init : _ =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    let start_parties : _ =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    {global_ledger; local_state_init; start_parties; state_body}
+                  in
+                  let statement : Statement.With_sok.t =
+                    let source : (_, _, _, _) Registers.t =
+                      let ledger : Frozen_ledger_hash.t =
+                        failwith @@ "FIXME: not implemented @" ^ __LOC__
+                      in
+                      let pending_coinbase_stack : Pending_coinbase.Stack.t =
+                        failwith @@ "FIXME: not implemented @" ^ __LOC__
+                      in
+                      let next_available_token : Token_id.t =
+                        failwith @@ "FIXME: not implemented @" ^ __LOC__
+                      in
+                      let local_state : Local_state.t =
+                        failwith @@ "FIXME: not implemented @" ^ __LOC__
+                      in
+                      { ledger
+                      ; pending_coinbase_stack
+                      ; next_available_token
+                      ; local_state }
+                    in
+                    let target : (_, _, _, _) Registers.t =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    let supply_increase : Currency.Amount.t =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    let fee_excess : Fee_excess.t =
+                      failwith @@ "FIXME: not implemented @" ^ __LOC__
+                    in
+                    let sok_digest : Sok_message.Digest.t =
+                      let sok_message : Sok_message.t =
+                        let fee : Currency.Fee.Stable.V1.t =
+                          failwith @@ "FIXME: not implemented @" ^ __LOC__
+                        in
+                        let prover : Public_key.Compressed.Stable.V1.t =
+                          failwith @@ "FIXME: not implemented @" ^ __LOC__
+                        in
+                        {fee; prover}
+                      in
+                      Sok_message.digest sok_message
+                    in
+                    {source; target; supply_increase; fee_excess; sok_digest}
+                  in
+                  let parties_segment_basic :
+                      (_, _, _, _) Parties_segment.Basic.t =
+                    Proved
+                  in
+                  let _proof =
+                    of_parties_segment_exn ~statement ~witness
+                      parties_segment_basic
+                  in
+                  failwith @@ "FIXME: not implemented @" ^ __LOC__ ) )
+      end )
 
     let account_fee = Fee.to_int constraint_constants.account_creation_fee
 
