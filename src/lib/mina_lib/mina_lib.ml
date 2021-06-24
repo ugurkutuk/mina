@@ -1054,7 +1054,7 @@ let start t =
   ( match t.config.uptime_snarks_url with
   | None ->
       ()
-  | Some _url ->
+  | Some url ->
       let slot_duration_ms =
         Consensus.Configuration.t
           ~constraint_constants:Genesis_constants.Constraint_constants.compiled
@@ -1062,28 +1062,33 @@ let start t =
         |> Consensus.Configuration.slot_duration |> Float.of_int
       in
       let five_slots_span = Time.Span.of_ms (slot_duration_ms *. 5.0) in
-      (* every 5 slots, check for next block to be produced *)
+      (* every 5 slots, check where block will be produced *)
       Async.Clock.every' ~continue_on_error:true five_slots_span (fun () ->
           let now = Time.now () in
           let five_slots_from_now = Time.add now five_slots_span in
-          let rec get_next_producing_time () =
-            let try_again () =
+          let rec get_next_producer_time () =
+            let try_again_soon () =
               let%bind () = Async.after (Time.Span.of_sec 10.0) in
-              get_next_producing_time ()
+              get_next_producer_time ()
             in
             match t.next_producer_timing with
             | None ->
-                try_again ()
+                try_again_soon ()
             | Some t -> (
               match t.timing with
               | Check_again _tm ->
-                  try_again ()
+                  try_again_soon ()
               | Produce prod_tm | Produce_now prod_tm ->
                   return (Block_time.to_time prod_tm.time) )
           in
-          let%bind next_producing_time = get_next_producing_time () in
-          if Time.( <= ) next_producing_time five_slots_from_now then return ()
-          else return () ) ) ;
+          let%bind next_producer_time = get_next_producer_time () in
+          if Time.( <= ) next_producer_time five_slots_from_now then
+            (* if producing a block, grab and send *)
+            Uptime_service.send_produced_block_at ~logger:t.config.logger ~url
+              ~transition_frontier:t.components.transition_frontier
+              next_producer_time
+          else (* produce SNARK work and send *)
+            return () ) ) ;
   Block_producer.run ~logger:t.config.logger ~verifier:t.processes.verifier
     ~set_next_producer_timing ~prover:t.processes.prover
     ~trust_system:t.config.trust_system
