@@ -369,7 +369,7 @@ let setup_daemon logger =
       ~doc:
         "true|false whether to track the set of all peers ever seen for the \
          all_peers metric (default: false)"
-  and uptime_snarks_url =
+  and uptime_snarks_url_string =
     flag "--uptime-snarks-url" ~aliases:["uptime-snarks-url"] (optional string)
       ~doc:
         "URL URL of server that accepts SNARKs to node uptime for Mina \
@@ -1110,6 +1110,9 @@ Pass one of -peer, -peer-list-file, -seed, -peer-list-url.|} ;
           proposed_protocol_version
       in
       let start_time = Time.now () in
+      let uptime_snarks_url =
+        Option.map uptime_snarks_url_string ~f:(fun s -> Uri.of_string s)
+      in
       let%map coda =
         Mina_lib.create ~wallets
           (Mina_lib.Config.make ~logger ~pids ~trust_system ~conf_dir ~chain_id
@@ -1136,7 +1139,8 @@ Pass one of -peer, -peer-list-file, -seed, -peer-list-url.|} ;
              ~consensus_local_state ~is_archive_rocksdb ~work_reassignment_wait
              ~archive_process_location ~log_block_creation ~precomputed_values
              ~start_time ?precomputed_blocks_path ~log_precomputed_blocks
-             ~upload_blocks_to_gcloud ~block_reward_threshold ())
+             ~upload_blocks_to_gcloud ~block_reward_threshold
+             ~uptime_snarks_url ())
       in
       { Coda_initialization.coda
       ; client_trustlist

@@ -1051,6 +1051,39 @@ let start t =
     t.block_production_status := block_production_status ;
     t.next_producer_timing <- Some next_producer_timing
   in
+  ( match t.config.uptime_snarks_url with
+  | None ->
+      ()
+  | Some _url ->
+      let slot_duration_ms =
+        Consensus.Configuration.t
+          ~constraint_constants:Genesis_constants.Constraint_constants.compiled
+          ~protocol_constants:Genesis_constants.compiled.protocol
+        |> Consensus.Configuration.slot_duration |> Float.of_int
+      in
+      let five_slots_span = Time.Span.of_ms (slot_duration_ms *. 5.0) in
+      (* every 5 slots, check for next block to be produced *)
+      Async.Clock.every' ~continue_on_error:true five_slots_span (fun () ->
+          let now = Time.now () in
+          let five_slots_from_now = Time.add now five_slots_span in
+          let rec get_next_producing_time () =
+            let try_again () =
+              let%bind () = Async.after (Time.Span.of_sec 10.0) in
+              get_next_producing_time ()
+            in
+            match t.next_producer_timing with
+            | None ->
+                try_again ()
+            | Some t -> (
+              match t.timing with
+              | Check_again _tm ->
+                  try_again ()
+              | Produce prod_tm | Produce_now prod_tm ->
+                  return (Block_time.to_time prod_tm.time) )
+          in
+          let%bind next_producing_time = get_next_producing_time () in
+          if Time.( <= ) next_producing_time five_slots_from_now then return ()
+          else return () ) ) ;
   Block_producer.run ~logger:t.config.logger ~verifier:t.processes.verifier
     ~set_next_producer_timing ~prover:t.processes.prover
     ~trust_system:t.config.trust_system
